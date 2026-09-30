@@ -1,0 +1,51 @@
+import type { RedeemCode } from "./types";
+
+// Shown by the in-memory store when no database is configured (local dev).
+export const SAMPLE_CODES: RedeemCode[] = [
+  {
+    id: "starfall-launch",
+    platform: "Starfall Legends",
+    title: "Launch celebration pack",
+    code: "SAMPLE-STAR-2026",
+    reward: "300 crystals + rare hero ticket",
+    category: "game",
+    howToRedeem: "Settings → Account → Redeem code",
+    expiresAt: "2026-12-31",
+    sharedBy: "codeveryone",
+    createdAt: "2026-09-20T10:00:00.000Z",
+  },
+  {
+    id: "pixelquest-weekend",
+    platform: "PixelQuest",
+    title: "Weekend XP boost",
+    code: "SAMPLE-PXQ-WKND",
+    reward: "2x XP for 48 hours",
+    category: "game",
+    howToRedeem: "Main menu → Store → Enter code",
+    sharedBy: "codeveryone",
+    createdAt: "2026-09-25T08:30:00.000Z",
+  },
+  {
+    id: "cloudnote-pro-trial",
+    platform: "CloudNote",
+    title: "Pro plan trial",
+    code: "SAMPLE-CN-PRO30",
+    reward: "30 days of CloudNote Pro",
+    category: "app",
+    howToRedeem: "Billing page → Apply promo code",
+    expiresAt: "2026-11-15",
+    sharedBy: "codeveryone",
+    createdAt: "2026-09-18T14:15:00.000Z",
+  },
+  {
+    id: "streambox-month",
+    platform: "StreamBox",
+    title: "One free month",
+    code: "SAMPLE-SBX-FREE1",
+    reward: "1 month of StreamBox Basic",
+    category: "service",
+    expiresAt: "2026-10-31",
+    sharedBy: "codeveryone",
+    createdAt: "2026-09-28T19:45:00.000Z",
+  },
+];

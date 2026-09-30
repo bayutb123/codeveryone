@@ -34,23 +34,45 @@ src/
   components/             # header, code card, copy button
   lib/
     types.ts              # RedeemCode type and categories
-    codes.ts              # data access (in-memory for now)
+    codes.ts              # data access (Postgres, or in-memory in dev)
+    sample-codes.ts       # sample data for the in-memory store
+  db/
+    schema.ts             # Drizzle table definitions
+drizzle/                  # generated SQL migrations
 ```
 
-## Data storage
+## Database
 
-`src/lib/codes.ts` currently keeps codes **in memory** with a few sample entries.
-That is fine for local development, but on Vercel each serverless instance has
-its own memory and it is reset on every deploy, so shared codes won't persist.
-Swap the functions in that file (`listCodes`, `getCode`, `addCode`) for a real
-database such as Vercel Postgres / Neon, Supabase or Upstash Redis — the pages
-only depend on those functions.
+Codes are stored in Postgres ([Neon](https://neon.tech), serverless driver)
+through [Drizzle ORM](https://orm.drizzle.team). The schema lives in
+`src/db/schema.ts` and SQL migrations in `drizzle/`.
+
+When `DATABASE_URL` is **not** set, local development falls back to an
+in-memory store with a few sample codes, so you can work on the UI without a
+database. In production a missing `DATABASE_URL` is an error.
+
+### Connect a database
+
+1. In your Vercel project, open **Storage → Create Database → Neon (Postgres)**
+   and connect it to the project. This sets `DATABASE_URL` for every
+   environment.
+2. Pull the variables locally: `npx vercel link && npx vercel env pull .env.local`
+   (or copy `.env.example` to `.env.local` and paste a connection string).
+3. Create the tables: `npm run db:migrate`.
+
+### Changing the schema
+
+1. Edit `src/db/schema.ts`.
+2. `npm run db:generate` to write a new migration to `drizzle/`, and commit it.
+3. `npm run db:migrate` to apply it (run against each database you use).
+
+`npm run db:studio` opens Drizzle Studio to browse the data.
 
 ## Deploy on Vercel
 
 1. Push this repository to GitHub.
 2. In Vercel, **Add New → Project** and import the repository.
 3. Vercel detects Next.js automatically — no extra configuration needed.
-4. Add any database environment variables in **Project → Settings → Environment Variables** once storage is wired up.
+4. Connect a Neon database and run the migrations — see [Connect a database](#connect-a-database).
 
 Or from the CLI: `npx vercel` (preview) and `npx vercel --prod`.

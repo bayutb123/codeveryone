@@ -41,7 +41,11 @@ export async function shareCode(
   if (!category) {
     return { error: "Please pick a valid category.", values };
   }
-  if (values.expiresAt && Number.isNaN(Date.parse(values.expiresAt))) {
+  if (
+    values.expiresAt &&
+    (!/^\d{4}-\d{2}-\d{2}$/.test(values.expiresAt) ||
+      Number.isNaN(Date.parse(values.expiresAt)))
+  ) {
     return { error: "Expiry date is not a valid date.", values };
   }
 

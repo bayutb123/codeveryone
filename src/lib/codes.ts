@@ -1,88 +1,141 @@
+import { neon } from "@neondatabase/serverless";
+import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/neon-http";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { codes } from "@/db/schema";
+import { SAMPLE_CODES } from "./sample-codes";
 import type { Category, NewRedeemCode, RedeemCode } from "./types";
-
-// In-memory store for development. Serverless instances on Vercel do not share
-// memory, so replace this module with a real database (e.g. Vercel Postgres,
-// Neon, Supabase) before relying on user submissions in production.
-const store: RedeemCode[] = [
-  {
-    id: "starfall-launch",
-    platform: "Starfall Legends",
-    title: "Launch celebration pack",
-    code: "SAMPLE-STAR-2026",
-    reward: "300 crystals + rare hero ticket",
-    category: "game",
-    howToRedeem: "Settings → Account → Redeem code",
-    expiresAt: "2026-12-31",
-    sharedBy: "codeveryone",
-    createdAt: "2026-09-20T10:00:00.000Z",
-  },
-  {
-    id: "pixelquest-weekend",
-    platform: "PixelQuest",
-    title: "Weekend XP boost",
-    code: "SAMPLE-PXQ-WKND",
-    reward: "2x XP for 48 hours",
-    category: "game",
-    howToRedeem: "Main menu → Store → Enter code",
-    sharedBy: "codeveryone",
-    createdAt: "2026-09-25T08:30:00.000Z",
-  },
-  {
-    id: "cloudnote-pro-trial",
-    platform: "CloudNote",
-    title: "Pro plan trial",
-    code: "SAMPLE-CN-PRO30",
-    reward: "30 days of CloudNote Pro",
-    category: "app",
-    howToRedeem: "Billing page → Apply promo code",
-    expiresAt: "2026-11-15",
-    sharedBy: "codeveryone",
-    createdAt: "2026-09-18T14:15:00.000Z",
-  },
-  {
-    id: "streambox-month",
-    platform: "StreamBox",
-    title: "One free month",
-    code: "SAMPLE-SBX-FREE1",
-    reward: "1 month of StreamBox Basic",
-    category: "service",
-    expiresAt: "2026-10-31",
-    sharedBy: "codeveryone",
-    createdAt: "2026-09-28T19:45:00.000Z",
-  },
-];
 
 export type CodeFilter = {
   query?: string;
   category?: Category;
 };
 
-export async function listCodes({ query, category }: CodeFilter = {}) {
-  const q = query?.trim().toLowerCase();
-  return store
-    .filter((c) => !category || c.category === category)
-    .filter(
-      (c) =>
-        !q ||
-        [c.platform, c.title, c.reward].some((field) =>
-          field.toLowerCase().includes(q),
-        ),
-    )
-    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
+export type CodeStore = {
+  list(filter: CodeFilter): Promise<RedeemCode[]>;
+  get(id: string): Promise<RedeemCode | undefined>;
+  add(input: NewRedeemCode): Promise<RedeemCode>;
+};
 
-export async function getCode(id: string) {
-  return store.find((c) => c.id === id);
-}
+const LIST_LIMIT = 100;
 
-export async function addCode(input: NewRedeemCode) {
-  const code: RedeemCode = {
-    ...input,
-    id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
+function toRedeemCode(row: typeof codes.$inferSelect): RedeemCode {
+  return {
+    ...row,
+    howToRedeem: row.howToRedeem ?? undefined,
+    expiresAt: row.expiresAt ?? undefined,
+    createdAt: row.createdAt.toISOString(),
   };
-  store.push(code);
-  return code;
+}
+
+/** Escapes LIKE wildcards so user input is matched literally. */
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+export function createDbStore(db: PgDatabase<PgQueryResultHKT>): CodeStore {
+  return {
+    async list({ query, category }) {
+      const conditions: (SQL | undefined)[] = [];
+      if (category) conditions.push(eq(codes.category, category));
+      const q = query?.trim();
+      if (q) {
+        const pattern = `%${escapeLike(q)}%`;
+        conditions.push(
+          or(
+            ilike(codes.platform, pattern),
+            ilike(codes.title, pattern),
+            ilike(codes.reward, pattern),
+          ),
+        );
+      }
+      const rows = await db
+        .select()
+        .from(codes)
+        .where(and(...conditions))
+        .orderBy(desc(codes.createdAt))
+        .limit(LIST_LIMIT);
+      return rows.map(toRedeemCode);
+    },
+
+    async get(id) {
+      const [row] = await db.select().from(codes).where(eq(codes.id, id));
+      return row && toRedeemCode(row);
+    },
+
+    async add(input) {
+      const [row] = await db
+        .insert(codes)
+        .values({ ...input, id: crypto.randomUUID() })
+        .returning();
+      return toRedeemCode(row);
+    },
+  };
+}
+
+export function createMemoryStore(initial: RedeemCode[] = []): CodeStore {
+  const items = [...initial];
+  return {
+    async list({ query, category }) {
+      const q = query?.trim().toLowerCase();
+      return items
+        .filter((c) => !category || c.category === category)
+        .filter(
+          (c) =>
+            !q ||
+            [c.platform, c.title, c.reward].some((field) =>
+              field.toLowerCase().includes(q),
+            ),
+        )
+        .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, LIST_LIMIT);
+    },
+
+    async get(id) {
+      return items.find((c) => c.id === id);
+    },
+
+    async add(input) {
+      const code: RedeemCode = {
+        ...input,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+      };
+      items.push(code);
+      return code;
+    },
+  };
+}
+
+let store: CodeStore | undefined;
+
+// Uses Postgres (Neon) when DATABASE_URL is set. Without it, local development
+// falls back to an in-memory store with sample codes; production refuses to
+// start rather than silently losing submissions.
+function getStore(): CodeStore {
+  if (store) return store;
+  const url = process.env.DATABASE_URL;
+  if (url) {
+    store = createDbStore(drizzle(neon(url)));
+  } else if (process.env.NODE_ENV === "production") {
+    throw new Error("DATABASE_URL is not set. Connect a Postgres database.");
+  } else {
+    console.warn("DATABASE_URL is not set; using in-memory sample codes.");
+    store = createMemoryStore(SAMPLE_CODES);
+  }
+  return store;
+}
+
+export function listCodes(filter: CodeFilter = {}) {
+  return getStore().list(filter);
+}
+
+export function getCode(id: string) {
+  return getStore().get(id);
+}
+
+export function addCode(input: NewRedeemCode) {
+  return getStore().add(input);
 }
 
 /** A code stays valid through its whole expiry date (compared in UTC). */
