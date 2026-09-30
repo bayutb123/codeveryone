@@ -39,6 +39,8 @@ src/
   db/
     schema.ts             # Drizzle table definitions
 drizzle/                  # generated SQL migrations
+scripts/migrate.mjs       # applies migrations (locally and in Vercel builds)
+vercel.json               # runs migrations before each Vercel build
 ```
 
 ## Database
@@ -60,11 +62,18 @@ database. In production a missing `DATABASE_URL` is an error.
    (or copy `.env.example` to `.env.local` and paste a connection string).
 3. Create the tables: `npm run db:migrate`.
 
+Every Vercel deployment runs `npm run db:migrate` before `next build`
+(see `vercel.json`), so production and preview databases — including Neon's
+per-preview branches — always have the latest schema. Already-applied
+migrations are skipped, and a failed migration fails the deployment instead of
+shipping code that expects tables that don't exist.
+
 ### Changing the schema
 
 1. Edit `src/db/schema.ts`.
 2. `npm run db:generate` to write a new migration to `drizzle/`, and commit it.
-3. `npm run db:migrate` to apply it (run against each database you use).
+3. `npm run db:migrate` to apply it locally. Vercel deployments apply it
+   automatically.
 
 `npm run db:studio` opens Drizzle Studio to browse the data.
 
